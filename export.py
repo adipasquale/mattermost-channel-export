@@ -277,6 +277,8 @@ def main() -> None:
     for i, raw in enumerate(raw_posts, 1):
         if i % 50 == 0:
             print(f"  {i}/{len(raw_posts)} …")
+        if raw.get("root_id"):
+            continue  # thread reply — will appear nested under its parent
         shaped = shape_post(raw)
         if shaped:
             messages.append(shaped)

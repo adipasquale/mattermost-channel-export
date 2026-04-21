@@ -11,15 +11,32 @@ Defaults:
     output : channel_archive.html
 
 Dependencies:
-    pip install emoji
+    pip install emoji mistune
 """
 
 import html
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import mistune as _mistune
+
+    class _Renderer(_mistune.HTMLRenderer):
+        def link(self, text, url, title=None):
+            s = f'<a href="{_mistune.helpers.escape_url(url)}" target="_blank" rel="noopener"'
+            if title:
+                s += f' title="{html.escape(title)}"'
+            return s + f">{text}</a>"
+
+    _md = _mistune.create_markdown(
+        renderer=_Renderer(),
+        plugins=["strikethrough", "table", "url"],
+    )
+
+except ImportError:
+    sys.exit("Missing dependency: pip install mistune")
 
 try:
     import emoji as _emoji_lib
@@ -102,119 +119,9 @@ def display_name(user: dict) -> str:
     return user.get("username", "unknown")
 
 
-URL_RE = re.compile(
-    r"(https?://[^\s<>\"\')]+)",
-    re.IGNORECASE,
-)
-
-MD_CODE_BLOCK = re.compile(r"```(\w*)\n?(.*?)```", re.DOTALL)
-MD_INLINE_CODE = re.compile(r"`([^`]+)`")
-MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
-MD_ITALIC = re.compile(r"\*(.+?)\*")
-MD_STRIKE = re.compile(r"~~(.+?)~~")
-MD_H1 = re.compile(r"^# (.+)$", re.MULTILINE)
-MD_H2 = re.compile(r"^## (.+)$", re.MULTILINE)
-MD_H3 = re.compile(r"^### (.+)$", re.MULTILINE)
-MD_BLOCKQUOTE = re.compile(r"^> (.+)$", re.MULTILINE)
-MD_HR = re.compile(r"^---+$", re.MULTILINE)
-
-
-def _render_table(raw: str) -> str:
-    """Convert a raw Markdown table (unescaped) to an HTML table string."""
-    lines = [l.strip() for l in raw.strip().splitlines()]
-    if len(lines) < 2:
-        return html.escape(raw)
-
-    def split_row(line: str) -> list[str]:
-        return [c.strip() for c in line.strip("|").split("|")]
-
-    headers = split_row(lines[0])
-    # lines[1] is the separator row (---|---) — skip it
-    body_lines = lines[2:]
-
-    th_cells = "".join(f"<th>{html.escape(emojize_text(c))}</th>" for c in headers)
-    thead = f"<thead><tr>{th_cells}</tr></thead>"
-
-    rows = []
-    for line in body_lines:
-        if not line.strip():
-            continue
-        cells = split_row(line)
-        # Pad or trim to match header count
-        while len(cells) < len(headers):
-            cells.append("")
-        td_cells = "".join(f"<td>{html.escape(emojize_text(c))}</td>" for c in cells[: len(headers)])
-        rows.append(f"<tr>{td_cells}</tr>")
-    tbody = f"<tbody>{''.join(rows)}</tbody>"
-
-    return f'<div class="table-wrap"><table>{thead}{tbody}</table></div>'
-
-
-# A table block: header row | separator row (must contain ---) | 0+ data rows
-_MD_TABLE = re.compile(
-    r"(\|.+\|\n\|[-| :]+\|\n(?:\|.+\|\n?)*)",
-    re.MULTILINE,
-)
-
-
 def render_message(text: str) -> str:
-    """Lightweight Markdown-to-HTML renderer for Mattermost messages."""
-    stash: list[str] = []
-
-    def stash_block(block: str) -> str:
-        stash.append(block)
-        return f"\x00STASH{len(stash) - 1}\x00"
-
-    # Stash code blocks first (protect their content from all further processing)
-    def stash_code_block(m: re.Match) -> str:
-        lang = html.escape(m.group(1))
-        code = html.escape(m.group(2).rstrip())
-        return stash_block(f'<pre><code class="language-{lang}">{code}</code></pre>')
-
-    text = MD_CODE_BLOCK.sub(stash_code_block, text)
-
-    # Stash tables (render from raw text before html.escape touches them)
-    text = _MD_TABLE.sub(lambda m: stash_block(_render_table(m.group(1))), text)
-
-    # Convert :shortcode: emoji before HTML-escaping (Unicode is safe in HTML)
     text = emojize_text(text)
-
-    # Escape HTML in the remaining text
-    text = html.escape(text)
-
-    # Inline code
-    text = MD_INLINE_CODE.sub(lambda m: f"<code>{html.escape(m.group(1))}</code>", text)
-
-    # Headings
-    text = MD_H1.sub(lambda m: f"<h4>{m.group(1)}</h4>", text)
-    text = MD_H2.sub(lambda m: f"<h5>{m.group(1)}</h5>", text)
-    text = MD_H3.sub(lambda m: f"<h6>{m.group(1)}</h6>", text)
-
-    # Blockquote
-    text = MD_BLOCKQUOTE.sub(lambda m: f"<blockquote>{m.group(1)}</blockquote>", text)
-
-    # Horizontal rule
-    text = MD_HR.sub("<hr>", text)
-
-    # Bold / italic / strikethrough
-    text = MD_BOLD.sub(lambda m: f"<strong>{m.group(1)}</strong>", text)
-    text = MD_ITALIC.sub(lambda m: f"<em>{m.group(1)}</em>", text)
-    text = MD_STRIKE.sub(lambda m: f"<del>{m.group(1)}</del>", text)
-
-    # URLs → clickable links
-    text = URL_RE.sub(
-        lambda m: f'<a href="{m.group(1)}" target="_blank" rel="noopener">{m.group(1)}</a>',
-        text,
-    )
-
-    # Line breaks → <br> (but not inside block elements already rendered)
-    text = text.replace("\n", "<br>")
-
-    # Restore all stashed blocks
-    for i, block in enumerate(stash):
-        text = text.replace(f"\x00STASH{i}\x00", block)
-
-    return text
+    return _md(text).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +191,7 @@ def render_links(links: list[dict]) -> str:
 def render_thread(replies: list[dict]) -> str:
     if not replies:
         return ""
+    replies = sorted(replies, key=lambda m: m.get("created_at", ""))
     items = []
     for msg in replies:
         user = msg.get("user", {})
@@ -489,14 +397,18 @@ body {
 .edited { font-size: 11px; color: var(--text-muted); }
 
 .message-text { color: var(--text); word-break: break-word; }
-.message-text a { color: var(--text-link); text-decoration: none; }
-.message-text a:hover { text-decoration: underline; }
-.message-text code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 13px; }
-.message-text pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; overflow-x: auto; margin: 8px 0; }
-.message-text pre code { background: none; padding: 0; font-size: 13px; }
-.message-text blockquote { border-left: 4px solid var(--accent); padding-left: 12px; color: var(--text-muted); margin: 6px 0; }
-.message-text h4, .message-text h5, .message-text h6 { margin: 8px 0 4px; }
-.message-text hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+.message-text p, .reply-text p { margin: 0 0 4px; }
+.message-text p:last-child, .reply-text p:last-child { margin-bottom: 0; }
+.message-text ul, .message-text ol, .reply-text ul, .reply-text ol { padding-left: 1.4em; margin: 4px 0; }
+.message-text a, .reply-text a { color: var(--text-link); text-decoration: none; }
+.message-text a:hover, .reply-text a:hover { text-decoration: underline; }
+.message-text code, .reply-text code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 13px; }
+.message-text pre, .reply-text pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; overflow-x: auto; margin: 8px 0; }
+.message-text pre code, .reply-text pre code { background: none; padding: 0; font-size: 13px; }
+.message-text blockquote, .reply-text blockquote { border-left: 4px solid var(--accent); padding-left: 12px; color: var(--text-muted); margin: 6px 0; }
+.message-text h4, .message-text h5, .message-text h6,
+.reply-text h4, .reply-text h5, .reply-text h6 { margin: 8px 0 4px; }
+.message-text hr, .reply-text hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
 .table-wrap { overflow-x: auto; margin: 8px 0; }
 table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
 th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
@@ -577,7 +489,6 @@ tr:nth-child(even) td { background: var(--bg2); }
 .reply-author { font-weight: 700; font-size: 13px; }
 .reply-time { font-size: 11px; color: var(--text-muted); margin-left: 8px; }
 .reply-text { font-size: 14px; word-break: break-word; }
-.reply-text a { color: var(--text-link); text-decoration: none; }
 
 /* Search */
 .search-wrap { padding: 20px 0 0; position: sticky; top: 0; background: var(--bg); z-index: 10; border-bottom: 1px solid var(--border); margin-bottom: 0; }
