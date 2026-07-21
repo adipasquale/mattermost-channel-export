@@ -5,7 +5,7 @@ Export Mattermost channels you have access to as TSV.
 Edit the TSV file to select which channels to export, then use export.py.
 
 Usage:
-    uv run --env-file .env select_channels.py [-o output.tsv]
+    uv run --env-file .env export_channels_list.py [-o output.tsv]
 
 Arguments:
     -o, --output     Output TSV file (default: channels.tsv)
