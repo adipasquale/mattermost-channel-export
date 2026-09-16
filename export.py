@@ -11,7 +11,15 @@ Required environment variables:
     MM_CHANNEL_ID   Channel ID(s) to export, comma-separated for multiple channels
 
 Optional:
-    MM_OUTPUT_DIR   Directory where output files are written (default: current directory)
+    MM_OUTPUT_DIR      Directory where output files are written (default: current directory)
+    MM_DOWNLOAD_IMAGES Download shared images next to the JSON (default: true)
+
+Output layout (per channel):
+    MM_OUTPUT_DIR/<channel-slug>/<channel-slug>.json
+    MM_OUTPUT_DIR/<channel-slug>/<file-id>_<name>.png   (downloaded images)
+
+to_html.py later writes an index.html into that same directory so the
+image references resolve as plain relative paths.
 """
 
 import json
@@ -38,8 +46,11 @@ TOKEN = os.environ.get("MM_TOKEN", "")
 CHANNEL_IDS = [c.strip() for c in os.environ.get("MM_CHANNEL_ID", "").split(",") if c.strip()]
 OUTPUT_DIR = os.environ.get("MM_OUTPUT_DIR", ".")
 COOKIE = os.environ.get("MM_COOKIE", "")
+DOWNLOAD_IMAGES = os.environ.get("MM_DOWNLOAD_IMAGES", "true").strip().lower() not in ("false", "0", "no")
 
 POSTS_PER_PAGE = 200  # max allowed by Mattermost
+FILE_DOWNLOAD_RETRIES = 3  # for network errors only; 429s are retried indefinitely (server tells us when)
+IMAGE_DOWNLOAD_DELAY = 0.3  # minimum seconds between image download requests, to stay well under rate limits
 
 
 def die(msg: str) -> None:
@@ -82,6 +93,38 @@ def get(path: str, params: dict | None = None) -> Any:
     if not resp.ok:
         die(f"GET {url} returned {resp.status_code}: {resp.text[:200]}")
     return resp.json()
+
+
+def download_file(file_id: str, dest_path: str, attempt: int = 1) -> bool:
+    """Download a Mattermost file to dest_path. Returns False (never raises) on failure
+    so a single bad image doesn't abort the whole export."""
+    if attempt == 1:
+        # Self-throttle: space out requests before we ever get a 429, not just after.
+        time.sleep(IMAGE_DOWNLOAD_DELAY)
+
+    url = f"{BASE_URL}/api/v4/files/{file_id}"
+    try:
+        resp = requests.get(url, headers=HEADERS, cookies=COOKIES, timeout=30)
+    except requests.RequestException as exc:
+        if attempt >= FILE_DOWNLOAD_RETRIES:
+            print(f"  Warning: giving up downloading file {file_id}: {exc}")
+            return False
+        time.sleep(2 * attempt)
+        return download_file(file_id, dest_path, attempt + 1)
+
+    if resp.status_code == 429:
+        retry_after = int(resp.headers.get("Retry-After", 2))
+        print(f"  Rate limited, waiting {retry_after}s …")
+        time.sleep(retry_after)
+        return download_file(file_id, dest_path, attempt)
+
+    if not resp.ok:
+        print(f"  Warning: could not download file {file_id}: HTTP {resp.status_code}")
+        return False
+
+    with open(dest_path, "wb") as fh:
+        fh.write(resp.content)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +208,35 @@ def ts_to_iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
 
 
-def extract_files(metadata: dict) -> list[dict]:
+def sanitize_filename(name: str) -> str:
+    name = re.sub(r"[^\w.\-]", "_", name or "")
+    return name or "file"
+
+
+def extract_files(metadata: dict, channel_dir: str, stats: dict) -> list[dict]:
     files = []
     for f in metadata.get("files", []) or []:
-        files.append({
+        entry = {
             "id": f.get("id"),
             "name": f.get("name"),
             "mime_type": f.get("mime_type"),
             "size": f.get("size"),
-        })
+        }
+        mime = entry["mime_type"] or ""
+        if DOWNLOAD_IMAGES and mime.startswith("image/") and entry["id"]:
+            local_name = f"{entry['id']}_{sanitize_filename(entry['name'])}"
+            dest_path = os.path.join(channel_dir, local_name)
+            if os.path.exists(dest_path) and (
+                entry["size"] is None or os.path.getsize(dest_path) == entry["size"]
+            ):
+                stats["cached"] += 1
+                entry["local_path"] = local_name
+            elif download_file(entry["id"], dest_path):
+                stats["downloaded"] += 1
+                entry["local_path"] = local_name
+            else:
+                stats["failed"] += 1
+        files.append(entry)
     return files
 
 
@@ -207,7 +270,7 @@ def extract_embeds(metadata: dict) -> list[dict]:
     return embeds
 
 
-def shape_post(raw: dict, include_thread: bool = True) -> dict | None:
+def shape_post(raw: dict, channel_dir: str, stats: dict, include_thread: bool = True) -> dict | None:
     # Skip deleted posts and system messages unless you want them
     if raw.get("delete_at", 0) > 0:
         return None
@@ -225,7 +288,7 @@ def shape_post(raw: dict, include_thread: bool = True) -> dict | None:
         "user": user,
         "message": raw.get("message", ""),
         "reactions": extract_reactions(metadata),
-        "files": extract_files(metadata),
+        "files": extract_files(metadata, channel_dir, stats),
         "links": extract_embeds(metadata),
     }
 
@@ -236,7 +299,11 @@ def shape_post(raw: dict, include_thread: bool = True) -> dict | None:
     if include_thread and not raw.get("root_id"):
         try:
             replies_raw = fetch_thread(raw["id"])
-            replies = [r for r in (shape_post(rp, include_thread=False) for rp in replies_raw) if r]
+            replies = [
+                r for r in (
+                    shape_post(rp, channel_dir, stats, include_thread=False) for rp in replies_raw
+                ) if r
+            ]
             if replies:
                 post["thread"] = replies
         except Exception as exc:
@@ -295,6 +362,11 @@ def export_channel(channel_id: str) -> None:
     print(f"  Channel name : {channel_info['display_name']} (#{channel_info['name']})")
     print()
 
+    slug = slugify(channel_info["display_name"] or channel_info["name"] or channel_id)
+    channel_dir = os.path.join(OUTPUT_DIR, slug)
+    os.makedirs(channel_dir, exist_ok=True)
+    image_stats = {"downloaded": 0, "cached": 0, "failed": 0}
+
     raw_posts = fetch_all_posts(channel_id)
     print(f"\nShaping {len(raw_posts)} posts …")
 
@@ -305,7 +377,7 @@ def export_channel(channel_id: str) -> None:
         if raw.get("root_id"):
             continue  # thread reply — will appear nested under its parent
         try:
-            shaped = shape_post(raw)
+            shaped = shape_post(raw, channel_dir, image_stats)
         except Exception as exc:
             print(f"  Warning: could not shape post {raw.get('id')}: {exc}")
             continue
@@ -319,13 +391,18 @@ def export_channel(channel_id: str) -> None:
         "messages": messages,
     }
 
-    slug = slugify(channel_info["display_name"] or channel_info["name"] or channel_id)
-    output_file = os.path.join(OUTPUT_DIR, f"{slug}.json")
+    output_file = os.path.join(channel_dir, f"{slug}.json")
 
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
     print(f"\nDone. {len(messages)} messages written to {output_file}")
+    if DOWNLOAD_IMAGES:
+        print(
+            f"Images: {image_stats['downloaded']} downloaded, "
+            f"{image_stats['cached']} already present, "
+            f"{image_stats['failed']} failed"
+        )
 
 
 # ---------------------------------------------------------------------------
