@@ -1,6 +1,6 @@
 # mattermost-channel-export
 
-Two scripts to export a Mattermost channel history and render it as a self-contained static HTML archive.
+Three scripts to select, export a Mattermost channel history, and render it as a self-contained static HTML archive.
 
 Tested against Mattermost **10.12.4**.
 
@@ -11,23 +11,43 @@ Tested against Mattermost **10.12.4**.
 | Script       | Input                 | Output                 |
 | ------------ | --------------------- | ---------------------- |
 | `export.py`  | Mattermost REST API   | `channel_export.json`  |
+| `export_channels_list.py` | Mattermost REST API | `channels.tsv` |
 | `to_html.py` | `channel_export.json` | `channel_archive.html` |
 
 ---
 
-## Requirements
+## Setup
 
 ```bash
-pip install requests emoji
+uv sync
+cp .env.example .env
+# Edit .env with your Mattermost URL and personal access token
 ```
 
 ---
 
-## 1. Export — `export.py`
+## Export Channels List — `export_channels_list.py`
+
+Export channels that the user is a member of to a TSV file with columns: `name | id | Open or Private | members count`
+
+```bash
+uv run --env-file .env export_channels_list.py [-o output.tsv]
+```
+
+---
+
+## Export a channel's messages — `export.py`
 
 Fetches the full history of a channel via the Mattermost API and writes a clean JSON file.
 
+```bash
+uv run --env-file .env export.py
+```
+
 ### Environment variables
+
+You can `cp .env.example .env` and edit the values there.
+`.env` is gitignored.
 
 | Variable        | Required | Description                                                                                              |
 | --------------- | -------- | -------------------------------------------------------------------------------------------------------- |
@@ -37,35 +57,19 @@ Fetches the full history of a channel via the Mattermost API and writes a clean 
 | `MM_OUTPUT_DIR` | No       | Directory where the output files are written (default: current directory)                                |
 | `MM_COOKIE`     | No       | Cookie header to send with every request, needed when the instance sits behind an auth proxy (see below) |
 
-**Finding the channel ID:** in the Mattermost web or desktop app, open the channel → **View Info** — the ID is displayed at the bottom, or visible in the URL.
 
 ### Cookie-based authentication (`MM_COOKIE`)
 
 If the Mattermost instance is behind `oauth2-proxy`, a personal access token alone may not be enough to get past the proxy. In that case, grab the `_oauth2_proxy` cookie value from your browser's dev tools (Application/Storage → Cookies) after logging in, and export it:
 
-```bash
-export MM_COOKIE="_oauth2_proxy=XXXX"
-```
-
 `MM_COOKIE` accepts a standard `key=value; key2=value2` cookie string, so you can pass additional cookies alongside `_oauth2_proxy` if needed.
 
 ### Usage
 
-```bash
-export MM_URL="https://mattermost.example.com"
-export MM_TOKEN="your-personal-access-token"
-export MM_CHANNEL_ID="abc123def456"
-# Optional: only needed behind an oauth2-proxy
-export MM_COOKIE="_oauth2_proxy=XXXX"
-
-python export.py
-```
-
-To export several channels in one run, pass multiple comma-separated IDs — one output file is written per channel:
+If you have setup channel ID(s) and output dir in your `.env` you can simply run
 
 ```bash
-export MM_CHANNEL_ID="abc123def456,ghi789jkl012"
-python export.py
+uv run --env-file .env export.py
 ```
 
 ### What it exports
@@ -135,19 +139,15 @@ python export.py
 }
 ```
 
----
-
-## 2. Render — `to_html.py`
+## Render a proper HTML page with a channel's history — `to_html.py`
 
 Converts the JSON export into a fully self-contained HTML file (no external dependencies, works offline).
 
-### Usage
-
 ```bash
-python to_html.py [input.json] [output.html]
+uv run --env-file .env to_html.py [input.json] [output.html]
 
 # defaults:
-python to_html.py
+uv run --env-file .env to_html.py
 # reads channel_export.json → writes channel_archive.html
 ```
 
@@ -166,21 +166,3 @@ python to_html.py
 - Live search bar — filters messages and highlights matches in real-time
 - Zebra-striped, horizontally-scrollable tables
 
----
-
-## Full workflow
-
-```bash
-# 1. Export
-export MM_URL="https://mattermost.example.com"
-export MM_TOKEN="your-token"
-export MM_CHANNEL_ID="your-channel-id"
-# export MM_COOKIE="_oauth2_proxy=XXXX"  # only if behind oauth2-proxy
-python export.py
-
-# 2. Render
-python to_html.py
-
-# Open in browser
-open channel_archive.html
-```

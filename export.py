@@ -3,7 +3,7 @@
 Export a Mattermost channel history to a clean JSON file.
 
 Usage:
-    python export.py
+    uv run --env-file .env export.py
 
 Required environment variables:
     MM_URL          Base URL of your Mattermost instance (e.g. https://mattermost.example.com)

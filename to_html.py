@@ -4,14 +4,11 @@ Convert a Mattermost channel export JSON (produced by export.py) to a
 self-contained, beautiful static HTML archive.
 
 Usage:
-    python to_html.py [input.json] [output.html]
+    uv run to_html.py [input.json] [output.html]
 
 Defaults:
     input  : channel_export.json
     output : channel_archive.html
-
-Dependencies:
-    pip install emoji mistune
 """
 
 import html
