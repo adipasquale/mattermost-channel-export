@@ -1,6 +1,6 @@
 # mattermost-channel-export
 
-Three scripts to select, export a Mattermost channel history, and render it as a self-contained static HTML archive.
+Three scripts to select, export a Mattermost channel history, and render it as a static HTML archive.
 
 Tested against Mattermost **10.12.4**.
 
@@ -8,11 +8,16 @@ Tested against Mattermost **10.12.4**.
 
 ## Scripts
 
-| Script       | Input                 | Output                 |
-| ------------ | --------------------- | ---------------------- |
-| `export.py`  | Mattermost REST API   | `channel_export.json`  |
+| Script       | Input                 | Output                                          |
+| ------------ | --------------------- | ------------------------------------------------ |
+| `export.py`  | Mattermost REST API   | `<channel-slug>/<channel-slug>.json` + downloaded images |
 | `export_channels_list.py` | Mattermost REST API | `channels.tsv` |
-| `to_html.py` | `channel_export.json` | `channel_archive.html` |
+| `to_html.py` | `<channel-slug>/<channel-slug>.json` | `<channel-slug>/index.html` |
+
+`export.py` writes each channel's JSON and its downloaded images into its own
+`<channel-slug>/` directory, so `to_html.py`'s `index.html` can reference the
+images as plain relative paths (see below). The archive is that whole
+directory, not a single file.
 
 ---
 
@@ -56,6 +61,7 @@ You can `cp .env.example .env` and edit the values there.
 | `MM_CHANNEL_ID` | Yes      | ID of the channel(s) to export. Comma-separated for multiple channels, e.g. `abc123,def456`              |
 | `MM_OUTPUT_DIR` | No       | Directory where the output files are written (default: current directory)                                |
 | `MM_COOKIE`     | No       | Cookie header to send with every request, needed when the instance sits behind an auth proxy (see below) |
+| `MM_DOWNLOAD_IMAGES` | No  | Download shared images (`image/*` files) next to the JSON (default: `true`). Set to `false` to skip.     |
 
 
 ### Cookie-based authentication (`MM_COOKIE`)
@@ -77,10 +83,15 @@ uv run --env-file .env export.py
 - All messages, chronologically ordered, fully paginated
 - Per-message: author (username, display name), timestamp, message text, edit status
 - Reactions with emoji and list of users
-- File attachments (name, MIME type, size)
+- File attachments (name, MIME type, size). Images (PNG, JPEG, GIF, …) are also
+  downloaded next to the JSON, and get a `local_path` pointing to the file.
+  Other file types (PDF, docs, …) are listed but not downloaded.
 - Link embeds (URL, OpenGraph title and description)
 - Thread replies nested under their root post
 - System messages and deleted posts are excluded
+
+Re-running `export.py` is safe and cheap: images already present on disk
+(same size as reported by the server) are not re-downloaded.
 
 ### Output format
 
@@ -120,6 +131,13 @@ uv run --env-file .env export.py
           "name": "report.pdf",
           "mime_type": "application/pdf",
           "size": 48320
+        },
+        {
+          "id": "...",
+          "name": "screenshot.png",
+          "mime_type": "image/png",
+          "size": 310647,
+          "local_path": "abc123_screenshot.png"
         }
       ],
       "links": [{ "type": "opengraph", "url": "https://...", "title": "..." }],
@@ -141,14 +159,14 @@ uv run --env-file .env export.py
 
 ## Render a proper HTML page with a channel's history — `to_html.py`
 
-Converts the JSON export into a fully self-contained HTML file (no external dependencies, works offline).
+Converts the JSON export into a static HTML page (no external dependencies, works offline). It has no network dependency of its own; when the JSON references downloaded images (`local_path`), it expects them next to the JSON, which is where `export.py` put them.
 
 ```bash
 uv run --env-file .env to_html.py [input.json] [output.html]
 
 # defaults:
 uv run --env-file .env to_html.py
-# reads channel_export.json → writes channel_archive.html
+# reads channel_export.json → writes index.html next to it
 ```
 
 ### Features
@@ -160,7 +178,7 @@ uv run --env-file .env to_html.py
 - Real Unicode emoji in reactions and message text (`:thumbsup:` → 👍)
 - Markdown rendering: bold, italic, strikethrough, inline code, code blocks, blockquotes, headings, horizontal rules, **tables**
 - Reactions shown as pills with user list on hover
-- File attachments displayed as pills with size
+- Images shown inline (click to open full size); other file attachments shown as pills with size
 - Link embeds with title and description
 - Thread replies collapsed by default, expandable inline
 - Live search bar — filters messages and highlights matches in real-time

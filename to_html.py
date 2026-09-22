@@ -8,7 +8,8 @@ Usage:
 
 Defaults:
     input  : channel_export.json
-    output : channel_archive.html
+    output : index.html, written next to the input JSON (so it sits alongside
+             any images export.py downloaded into that same directory)
 """
 
 import html
@@ -160,6 +161,15 @@ def render_files(files: list[dict]) -> str:
         mime = f.get("mime_type", "")
         size = f.get("size", 0)
         size_str = f"{size // 1024} KB" if size else ""
+        local_path = f.get("local_path")
+        if mime.startswith("image/") and local_path:
+            src = html.escape(local_path)
+            items.append(
+                f'<a class="image-link" href="{src}" target="_blank" rel="noopener">'
+                f'<img class="msg-image" src="{src}" alt="{name}" loading="lazy" decoding="async">'
+                f'</a>'
+            )
+            continue
         icon = "🖼" if mime.startswith("image/") else "📎"
         items.append(f'<div class="file-pill">{icon} <span class="file-name">{name}</span><span class="file-size">{size_str}</span></div>')
     return f'<div class="files">{"".join(items)}</div>'
@@ -441,6 +451,18 @@ tr:nth-child(even) td { background: var(--bg2); }
 .file-name { font-weight: 500; }
 .file-size { color: var(--text-muted); font-size: 11px; }
 
+.image-link { display: inline-block; margin-top: 4px; }
+.msg-image {
+  display: block;
+  max-width: 360px;
+  max-height: 360px;
+  min-height: 80px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
 /* Embeds */
 .embed {
   border-left: 4px solid var(--accent);
@@ -677,7 +699,7 @@ def build_html(data: dict) -> str:
 def main() -> None:
     args = sys.argv[1:]
     input_file = Path(args[0]) if args else Path("channel_export.json")
-    output_file = Path(args[1]) if len(args) > 1 else Path("channel_archive.html")
+    output_file = Path(args[1]) if len(args) > 1 else input_file.parent / "index.html"
 
     if not input_file.exists():
         sys.exit(f"ERROR: input file not found: {input_file}")
