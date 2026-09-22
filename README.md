@@ -1,6 +1,8 @@
 # mattermost-channel-export
 
-Three scripts to select, export a Mattermost channel history, and render it as a static HTML archive.
+Three scripts to select, export a Mattermost channel history, and render it as a static HTML archive
+
+There is also an archive browser webapp in the standalone file `/index.html`.
 
 Tested against Mattermost **10.12.4**.
 
@@ -95,67 +97,7 @@ Re-running `export.py` is safe and cheap: images already present on disk
 
 ### Output format
 
-```json
-{
-  "exported_at": "2026-04-21T10:00:00+00:00",
-  "channel": {
-    "id": "...",
-    "name": "general",
-    "display_name": "General",
-    "type": "O",
-    "purpose": "...",
-    "team": "Acme Corp",
-    "created_at": "..."
-  },
-  "message_count": 1234,
-  "messages": [
-    {
-      "id": "...",
-      "created_at": "2026-01-15T09:32:00+00:00",
-      "updated_at": null,
-      "user": {
-        "id": "...",
-        "username": "alice",
-        "first_name": "Alice",
-        "last_name": "Smith",
-        "nickname": "",
-        "email": "alice@example.com"
-      },
-      "message": "Hello everyone! :wave:",
-      "reactions": [
-        { "emoji": "thumbsup", "count": 3, "users": ["bob", "carol", "dave"] }
-      ],
-      "files": [
-        {
-          "id": "...",
-          "name": "report.pdf",
-          "mime_type": "application/pdf",
-          "size": 48320
-        },
-        {
-          "id": "...",
-          "name": "screenshot.png",
-          "mime_type": "image/png",
-          "size": 310647,
-          "local_path": "abc123_screenshot.png"
-        }
-      ],
-      "links": [{ "type": "opengraph", "url": "https://...", "title": "..." }],
-      "thread": [
-        {
-          "id": "...",
-          "created_at": "...",
-          "user": { "username": "bob", "...": "..." },
-          "message": "Great!",
-          "reactions": [],
-          "files": [],
-          "links": []
-        }
-      ]
-    }
-  ]
-}
-```
+Voir `examples/general/general.json` pour un exemple complet de sortie (canal, messages, réactions, fichiers, threads).
 
 ## Render a proper HTML page with a channel's history — `to_html.py`
 
@@ -183,4 +125,24 @@ uv run --env-file .env to_html.py
 - Thread replies collapsed by default, expandable inline
 - Live search bar — filters messages and highlights matches in real-time
 - Zebra-striped, horizontally-scrollable tables
+
+---
+
+## Browse multiple exported channels — `index.html`
+
+A static, dependency-free page at the repo root for browsing several exported channels at once.
+
+**Requires a Chromium-based browser** for the folder picker — it uses the File System Access API, which Firefox and Safari don't support yet
+
+There is a search feature that accepts a Mattermost permalink (`https://…/pl/<id>`) or a raw message ID and redirects to the correct chanel and message when found.
+
+Previewing the channel in a iframe requires a Service Worker, which serves the picked folder's files directly so each channel's page loads completely unmodified. Service Workers need a secure context, so **serve `index.html` over `https://` or `http://localhost`**.
+
+### Demo
+
+- **Browser app**: https://revolunet.github.io/mattermost-channel-export/ — pick any exported channel folder on your machine  to try it.
+- **Individual example channel pages** (rendered by `to_html.py`, published as-is):
+  - https://revolunet.github.io/mattermost-channel-export/examples/general/index.html
+  - https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html
+  - https://revolunet.github.io/mattermost-channel-export/examples/veille-tech/index.html
 

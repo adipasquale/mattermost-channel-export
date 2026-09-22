@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mattermost Archive Browser</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1e1f22;
+  --bg2: #2b2d31;
+  --bg3: #313338;
+  --surface: #383a40;
+  --border: #3f4147;
+  --text: #dbdee1;
+  --text-muted: #80848e;
+  --text-link: #00a8fc;
+  --accent: #5865f2;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.layout { display: flex; height: 100vh; }
+
+/* Sidebar */
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sidebar-bottom { margin-top: auto; }
+.sidebar-bottom-row { display: flex; gap: 8px; }
+.sidebar-bottom-row .btn { flex: 1; }
+
+.sidebar h1 { font-size: 17px; font-weight: 800; }
+.sidebar .subtitle { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+.section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  width: 100%;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.btn.secondary:hover { background: var(--bg3); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+#status { font-size: 12px; color: var(--text-muted); margin-top: 8px; min-height: 16px; }
+
+.warning {
+  background: #3a2a1a;
+  border: 1px solid #a06a2a;
+  color: #f2c98a;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+/* Channel list */
+#channels-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.channels-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.channel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.channel-item:hover { background: var(--bg3); }
+.channel-item.active { background: var(--surface); border-color: var(--accent); }
+.channel-item .info { min-width: 0; }
+.channel-item .name {
+  font-weight: 600;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.channel-item .name::before { content: "# "; color: var(--text-muted); font-weight: 400; }
+.channel-item .meta { font-size: 11px; color: var(--text-muted); }
+.channel-item .no-html { font-size: 10px; color: #f2c98a; }
+
+.item-open-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+.item-open-btn:hover { color: var(--text); background: var(--bg2); }
+.item-open-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+/* Search modal */
+dialog#search-modal {
+  margin: auto; /* the global margin reset above also strips native dialog centering */
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  width: min(480px, 90vw);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
+}
+dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.modal-header h2 { font-size: 16px; }
+
+.icon-x {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+.icon-x:hover { color: var(--text); }
+
+.search-row { display: flex; flex-direction: column; gap: 10px; }
+.search-row .btn { width: 100%; }
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+}
+.search-input:focus { border-color: var(--accent); }
+
+.search-result {
+  margin-top: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.search-result .excerpt { color: var(--text-muted); font-size: 12px; margin: 4px 0 8px; }
+.search-result.empty { color: var(--text-muted); }
+
+/* Main */
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+#preview-open-tab { width: auto; }
+
+.preview-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  padding: 20px;
+}
+
+.onboarding {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.onboarding-content {
+  max-width: 760px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+}
+.onboarding-content h2 { font-size: 20px; margin-bottom: 16px; }
+.onboarding-content p { color: var(--text); margin-bottom: 12px; }
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+.onboarding-content code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.onboarding-content .btn { width: auto; }
+.onboarding-content .tree {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-x: auto;
+  margin-bottom: 18px;
+}
+.onboarding-content a { color: var(--text-link); text-decoration: none; }
+.onboarding-content a:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .onboarding-grid { grid-template-columns: 1fr; }
+}
+
+#preview-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside id="sidebar" class="sidebar hidden">
+    <div>
+      <h1>Mattermost Archive Browser</h1>
+      <div class="subtitle">Parcourez vos salons exportés, sans serveur.</div>
+    </div>
+
+    <div id="channels-section" class="hidden">
+      <div class="section-title">Salons</div>
+      <div id="channels-list" class="channels-list"></div>
+    </div>
+
+    <div class="sidebar-bottom-row sidebar-bottom">
+      <button id="search-toggle" class="btn secondary hidden">🔎 Rechercher</button>
+      <button id="disconnect-btn" class="btn secondary hidden">⏻ Déconnecter</button>
+    </div>
+  </aside>
+
+  <dialog id="search-modal">
+    <div class="modal-header">
+      <h2>Rechercher un message</h2>
+      <button id="search-close" class="icon-x" aria-label="Fermer">✕</button>
+    </div>
+    <div class="search-row">
+      <input id="search-input" class="search-input" type="text" placeholder="Lien Mattermost ou ID de message">
+      <button id="search-btn" class="btn secondary">OK</button>
+    </div>
+    <div id="search-result"></div>
+  </dialog>
+
+  <main class="main">
+    <div id="onboarding" class="onboarding">
+      <div class="onboarding-content">
+        <h2>Parcourir des archives Mattermost</h2>
+        <div class="onboarding-grid">
+          <div>
+            <p>Cette page permet d'explorer des archives de salons Mattermost exportées via <a href="https://github.com/revolunet/mattermost-channel-export" target="_blank" rel="noopener">l’outil mattermost-channel-export ↗</a>.</p>
+            <p>Aucune donnée ne transite par un serveur : <b>tout reste sur votre ordinateur</b>.</p>
+            <button id="pick-btn" class="btn">📁 Ouvrir un export</button>
+            <button id="resume-btn" class="btn secondary hidden" style="margin-top:8px"></button>
+            <div id="status"></div>
+            <div id="unsupported" class="warning hidden">
+              Cette fonctionnalité nécessite un navigateur basé sur Chromium (Chrome, Edge, Opera, Brave…). La sélection de dossier n'est pas disponible ici.
+            </div>
+          </div>
+          <div>
+            <p>exemple d'arborescence :</p>
+            <pre class="tree">examples/
+├── general/
+│   ├── general.json
+│   ├── index.html
+│   └── e5f6a7b8_photo-equipe.svg
+├── cantine/
+│   ├── cantine.json
+│   ├── index.html
+│   └── c3d4e5f6_menu-du-jour.svg
+└── veille-tech/
+    ├── veille-tech.json
+    ├── index.html
+    └── a1b2c3d4_schema-archi.svg</pre>
+            <p>Vous pouvez ouvrir le dossier examples ou un des dossiers general, cantine…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="preview-header" class="preview-header hidden">
+      <h2 id="preview-title"></h2>
+      <button id="preview-open-tab" class="btn secondary">Ouvrir dans un nouvel onglet ↗</button>
+    </div>
+    <div id="preview-empty" class="preview-empty hidden">Choisissez un salon dans la barre latérale pour l'afficher ici.</div>
+    <iframe id="preview-frame" title="Aperçu du salon" class="hidden"></iframe>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  let channels = [];
+  let searchIndex = [];
+  let activeChannel = null;
+
+  const pickBtn = document.getElementById("pick-btn");
+  const resumeBtn = document.getElementById("resume-btn");
+  const statusEl = document.getElementById("status");
+  const unsupportedEl = document.getElementById("unsupported");
+  const sidebar = document.getElementById("sidebar");
+  const channelsSection = document.getElementById("channels-section");
+  const channelsList = document.getElementById("channels-list");
+  const disconnectBtn = document.getElementById("disconnect-btn");
+  const searchToggle = document.getElementById("search-toggle");
+  const searchModal = document.getElementById("search-modal");
+  const searchClose = document.getElementById("search-close");
+  const searchInput = document.getElementById("search-input");
+  const searchBtn = document.getElementById("search-btn");
+  const searchResult = document.getElementById("search-result");
+  const previewHeader = document.getElementById("preview-header");
+  const previewTitle = document.getElementById("preview-title");
+  const previewFrame = document.getElementById("preview-frame");
+  const previewEmpty = document.getElementById("preview-empty");
+  const onboarding = document.getElementById("onboarding");
+  const previewOpenTab = document.getElementById("preview-open-tab");
+
+  const supportsFSAccess = typeof window.showDirectoryPicker === "function";
+  if (!supportsFSAccess) {
+    pickBtn.disabled = true;
+    unsupportedEl.classList.remove("hidden");
+  }
+
+  // A FileSystemDirectoryHandle can be stored in IndexedDB and reused across
+  // reloads. Its read permission isn't always remembered though, so a
+  // "prompt" result falls back to a one-click "Reprendre" button.
+  const HANDLE_DB = "mm-archive-browser";
+  const HANDLE_STORE = "handles";
+  const HANDLE_KEY = "root";
+
+  function openHandleDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(HANDLE_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(HANDLE_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function saveHandle(handle) {
+    try {
+      const db = await openHandleDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE, "readwrite");
+        tx.objectStore(HANDLE_STORE).put(handle, HANDLE_KEY);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.warn("Impossible d'enregistrer le dossier pour la prochaine visite:", e);
+    }
+  }
+
+  async function deleteSavedHandle() {
+    try {
+      const db = await openHandleDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE, "readwrite");
+        tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.warn("Impossible d'oublier le dossier mémorisé:", e);
+    }
+  }
+
+  async function loadSavedHandle() {
+    try {
+      const db = await openHandleDB();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(HANDLE_STORE, "readonly");
+        const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // sw.js serves the picked directory's files under a virtual
+  // "__mm_preview__/…" URL, so channel pages load with real relative image
+  // paths, no rewriting. Requires https:// or localhost — unavailable on
+  // file://, where previewChannel() falls back to base64 below.
+  const PREVIEW_PREFIX = "__mm_preview__/";
+  let swReady = false;
+
+  async function initServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    try {
+      await navigator.serviceWorker.register("sw.js");
+      await navigator.serviceWorker.ready;
+      swReady = true;
+    } catch (e) {
+      console.warn("Service Worker indisponible (aperçu par repli utilisé) :", e);
+      swReady = false;
+    }
+  }
+
+  function buildPreviewUrl(ch) {
+    const path = PREVIEW_PREFIX + [...ch.pathFromRoot, "index.html"].join("/");
+    return new URL(path, document.baseURI).href;
+  }
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+    } catch (e) {
+      return iso;
+    }
+  }
+
+  function flattenMessages(channelData) {
+    const flat = [];
+    for (const m of channelData.messages || []) {
+      flat.push({ id: m.id, message: m.message || "", created_at: m.created_at, user: m.user, isReply: false });
+      for (const r of m.thread || []) {
+        flat.push({ id: r.id, message: r.message || "", created_at: r.created_at, user: r.user, isReply: true, parentId: m.id });
+      }
+    }
+    return flat;
+  }
+
+  function isValidExportShape(data) {
+    return !!(data && typeof data === "object" && data.channel && Array.isArray(data.messages));
+  }
+
+  async function tryLoadChannelDir(dirHandle, dirName) {
+    let jsonHandle = null;
+    try {
+      jsonHandle = await dirHandle.getFileHandle(dirName + ".json");
+    } catch (e) {}
+    if (!jsonHandle) {
+      for await (const [name, handle] of dirHandle.entries()) {
+        if (handle.kind === "file" && name.toLowerCase().endsWith(".json")) {
+          jsonHandle = handle;
+          break;
+        }
+      }
+    }
+    if (!jsonHandle) return null;
+
+    let data;
+    try {
+      const file = await jsonHandle.getFile();
+      data = JSON.parse(await file.text());
+    } catch (e) {
+      return null;
+    }
+    if (!isValidExportShape(data)) return null;
+
+    let htmlHandle = null;
+    try {
+      htmlHandle = await dirHandle.getFileHandle("index.html");
+    } catch (e) {}
+
+    return {
+      dirName,
+      dirHandle,
+      channelData: data,
+      messages: flattenMessages(data),
+      htmlHandle,
+    };
+  }
+
+  async function loadChannels(rootHandle) {
+    channels = [];
+    activeChannel = null;
+    setStatus("Analyse du dossier…");
+
+    const direct = await tryLoadChannelDir(rootHandle, rootHandle.name || "salon");
+    if (direct) {
+      direct.pathFromRoot = [];
+      channels.push(direct);
+    } else {
+      const subdirs = [];
+      for await (const [name, handle] of rootHandle.entries()) {
+        if (handle.kind === "directory") subdirs.push([name, handle]);
+      }
+      for (const [name, handle] of subdirs) {
+        const ch = await tryLoadChannelDir(handle, name);
+        if (ch) {
+          ch.pathFromRoot = [name];
+          channels.push(ch);
+        }
+      }
+    }
+
+    buildSearchIndex();
+    renderChannels();
+    resetPreview();
+
+    if (channels.length === 0) {
+      setStatus("Aucun salon exporté trouvé dans ce dossier.");
+    } else {
+      setStatus(channels.length + " salon(s) trouvé(s).");
+    }
+    channelsSection.classList.toggle("hidden", channels.length === 0);
+    searchToggle.classList.toggle("hidden", channels.length === 0);
+
+    pickBtn.classList.add("hidden");
+    disconnectBtn.classList.remove("hidden");
+  }
+
+  function buildSearchIndex() {
+    searchIndex = [];
+    for (const ch of channels) {
+      for (const m of ch.messages) {
+        searchIndex.push(Object.assign({}, m, { channel: ch }));
+      }
+    }
+  }
+
+  function dateRange(ch) {
+    const dates = ch.messages.map((m) => m.created_at).filter(Boolean).sort();
+    if (dates.length === 0) return "";
+    const first = formatDate(dates[0]);
+    const last = formatDate(dates[dates.length - 1]);
+    return first === last ? first : first + " – " + last;
+  }
+
+  function renderChannels() {
+    channelsList.innerHTML = "";
+    for (const ch of channels) {
+      const c = ch.channelData.channel || {};
+      const item = document.createElement("div");
+      item.className = "channel-item";
+      item.dataset.dirName = ch.dirName;
+
+      const info = document.createElement("div");
+      info.className = "info";
+      info.innerHTML =
+        "<div class=\"name\">" + escapeHtml(c.display_name || c.name || ch.dirName) + "</div>" +
+        "<div class=\"meta\">" + (ch.channelData.message_count != null ? ch.channelData.message_count : ch.messages.length) + " messages" +
+          (dateRange(ch) ? " · " + dateRange(ch) : "") + "</div>" +
+        (!ch.htmlHandle ? "<div class=\"no-html\">pas d'index.html</div>" : "");
+      item.appendChild(info);
+
+      const openBtn = document.createElement("button");
+      openBtn.className = "item-open-btn";
+      openBtn.textContent = "↗";
+      openBtn.title = "Ouvrir dans un nouvel onglet";
+      openBtn.disabled = !ch.htmlHandle || !swReady;
+      openBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openInNewTab(ch);
+      });
+      item.appendChild(openBtn);
+
+      item.addEventListener("click", () => previewChannel(ch));
+      channelsList.appendChild(item);
+    }
+  }
+
+  function updateActiveHighlight() {
+    const items = channelsList.querySelectorAll(".channel-item");
+    items.forEach((el) => {
+      el.classList.toggle("active", !!activeChannel && el.dataset.dirName === activeChannel.dirName);
+    });
+  }
+
+  function focusMessage(iframe, id) {
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    const el = doc.getElementById("msg-" + id);
+    if (!el) return;
+    const repliesWrap = el.closest(".thread-replies");
+    if (repliesWrap && repliesWrap.classList.contains("hidden")) {
+      repliesWrap.classList.remove("hidden");
+      const toggle = repliesWrap.previousElementSibling;
+      if (toggle && toggle.classList.contains("thread-toggle")) toggle.classList.add("open");
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.style.transition = "background-color 0.4s ease";
+    el.style.backgroundColor = "rgba(250,166,26,0.35)";
+    setTimeout(() => { el.style.backgroundColor = ""; }, 2200);
+  }
+
+  function resetPreview() {
+    previewHeader.classList.add("hidden");
+    previewFrame.classList.add("hidden");
+    previewFrame.removeAttribute("srcdoc");
+    previewFrame.removeAttribute("src");
+
+    const connected = channels.length > 0;
+    onboarding.classList.toggle("hidden", connected);
+    previewEmpty.classList.toggle("hidden", !connected);
+    sidebar.classList.toggle("hidden", !connected);
+  }
+
+  // A 404/permission-denied response still fires "load", so success is
+  // checked by looking for a marker only to_html.py's pages have.
+  async function tryPreviewViaServiceWorker(ch, focusId) {
+    if (!swReady || ch._swWorks === false) return false;
+
+    const url = buildPreviewUrl(ch);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        previewFrame.removeEventListener("load", onLoad);
+        clearTimeout(timer);
+        ch._swWorks = ok;
+        resolve(ok);
+      };
+      const onLoad = () => {
+        const doc = previewFrame.contentDocument;
+        const ok = !!(doc && doc.querySelector(".channel-header"));
+        if (ok && focusId) focusMessage(previewFrame, focusId);
+        finish(ok);
+      };
+      const timer = setTimeout(() => finish(false), 2500);
+      previewFrame.addEventListener("load", onLoad);
+      previewFrame.removeAttribute("srcdoc");
+      previewFrame.src = url;
+    });
+  }
+
+  async function previewChannel(ch, focusId) {
+    activeChannel = ch;
+    updateActiveHighlight();
+
+    const c = ch.channelData.channel || {};
+    previewEmpty.classList.add("hidden");
+    previewHeader.classList.remove("hidden");
+    previewFrame.classList.remove("hidden");
+    previewTitle.textContent = c.display_name || c.name || ch.dirName;
+    previewOpenTab.onclick = () => openInNewTab(ch);
+
+    if (!ch.htmlHandle) {
+      previewOpenTab.disabled = true;
+      previewFrame.removeAttribute("src");
+      previewFrame.srcdoc = "<p style=\"font-family:sans-serif;padding:20px;color:#ccc;background:#1e1f22\">index.html manquant pour ce salon — lancez to_html.py dessus.</p>";
+      return;
+    }
+
+    const ok = await tryPreviewViaServiceWorker(ch, focusId);
+    previewOpenTab.disabled = !ok;
+    if (!ok) {
+      previewFrame.removeAttribute("src");
+      previewFrame.srcdoc = "<p style=\"font-family:sans-serif;padding:20px;color:#ccc;background:#1e1f22\">Aperçu indisponible : cette page doit être servie via https:// ou http://localhost pour activer le Service Worker (voir le README).</p>";
+    }
+  }
+
+  function openInNewTab(ch) {
+    window.open(buildPreviewUrl(ch), "_blank");
+  }
+
+  function extractPostId(raw) {
+    const value = (raw || "").trim();
+    const plMatch = value.match(/\/pl\/([A-Za-z0-9]+)/);
+    if (plMatch) return plMatch[1];
+    if (/^[A-Za-z0-9]{20,32}$/.test(value)) return value;
+    return null;
+  }
+
+  function runSearch() {
+    const postId = extractPostId(searchInput.value);
+    if (!postId) {
+      searchResult.innerHTML = "<div class=\"search-result empty\">Collez un lien Mattermost de la forme https://…/pl/&lt;id&gt;, ou un ID de message.</div>";
+      return;
+    }
+
+    const found = searchIndex.find((m) => m.id === postId);
+    if (!found) {
+      searchResult.innerHTML = "<div class=\"search-result empty\">Aucun message trouvé pour cet ID parmi les " + channels.length + " salon(s) chargé(s).</div>";
+      return;
+    }
+
+    const c = found.channel.channelData.channel || {};
+    const author = found.user ? (found.user.username || "") : "";
+    const excerpt = found.message.length > 160 ? found.message.slice(0, 160) + "…" : found.message;
+
+    const wrap = document.createElement("div");
+    wrap.className = "search-result";
+    wrap.innerHTML =
+      "<div><strong>" + escapeHtml(c.display_name || found.channel.dirName) + "</strong>" +
+      (author ? " · @" + escapeHtml(author) : "") +
+      (found.created_at ? " · " + formatDate(found.created_at) : "") +
+      (found.isReply ? " · réponse de thread" : "") + "</div>" +
+      "<div class=\"excerpt\">" + escapeHtml(excerpt || "(message vide)") + "</div>";
+
+    const goBtn = document.createElement("button");
+    goBtn.className = "btn secondary";
+    goBtn.textContent = "Voir le message";
+    goBtn.disabled = !found.channel.htmlHandle;
+    goBtn.addEventListener("click", () => {
+      previewChannel(found.channel, found.id);
+      searchModal.close();
+    });
+    wrap.appendChild(goBtn);
+
+    searchResult.innerHTML = "";
+    searchResult.appendChild(wrap);
+  }
+
+  async function pickDirectory() {
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      resumeBtn.classList.add("hidden");
+      await saveHandle(dirHandle);
+      await loadChannels(dirHandle);
+    } catch (e) {
+      if (e.name !== "AbortError") {
+        console.error(e);
+        setStatus("Erreur lors de la lecture du dossier : " + e.message);
+      }
+    }
+  }
+
+  async function resumeDirectory(handle) {
+    try {
+      const perm = await handle.requestPermission({ mode: "read" });
+      if (perm === "granted") {
+        resumeBtn.classList.add("hidden");
+        await loadChannels(handle);
+      } else {
+        setStatus("Permission refusée pour ce dossier — choisissez-en un autre.");
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus("Impossible de réutiliser ce dossier : " + e.message);
+    }
+  }
+
+  async function tryResumeLastDirectory() {
+    if (!supportsFSAccess || !("indexedDB" in window)) return;
+    const handle = await loadSavedHandle();
+    if (!handle) return;
+
+    let perm;
+    try {
+      perm = await handle.queryPermission({ mode: "read" });
+    } catch (e) {
+      return; // handle no longer usable (e.g. moved/deleted) — ignore, normal picker still works
+    }
+
+    if (perm === "granted") {
+      setStatus("Dossier précédent retrouvé…");
+      await loadChannels(handle);
+    } else if (perm === "prompt") {
+      resumeBtn.textContent = "📂 Reprendre « " + (handle.name || "le dernier dossier") + " »";
+      resumeBtn.classList.remove("hidden");
+      resumeBtn.onclick = () => resumeDirectory(handle);
+    }
+  }
+
+  async function disconnect() {
+    channels = [];
+    searchIndex = [];
+    activeChannel = null;
+    channelsList.innerHTML = "";
+    resetPreview();
+
+    channelsSection.classList.add("hidden");
+    searchToggle.classList.add("hidden");
+    disconnectBtn.classList.add("hidden");
+    resumeBtn.classList.add("hidden");
+    pickBtn.classList.remove("hidden");
+    setStatus("");
+
+    await deleteSavedHandle();
+  }
+
+  pickBtn.addEventListener("click", pickDirectory);
+  disconnectBtn.addEventListener("click", disconnect);
+
+  searchToggle.addEventListener("click", () => {
+    searchModal.showModal();
+    searchInput.focus();
+  });
+
+  searchClose.addEventListener("click", () => searchModal.close());
+
+  searchModal.addEventListener("click", (e) => {
+    if (e.target === searchModal) searchModal.close(); // backdrop click
+  });
+
+  searchBtn.addEventListener("click", runSearch);
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      runSearch();
+    }
+  });
+
+  initServiceWorker();
+  tryResumeLastDirectory();
+})();
+</script>
+</body>
+</html>
