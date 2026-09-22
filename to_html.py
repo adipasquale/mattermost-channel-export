@@ -203,7 +203,7 @@ def render_thread(replies: list[dict]) -> str:
     for msg in replies:
         user = msg.get("user", {})
         items.append(
-            f'<div class="reply">'
+            f'<div class="reply" id="msg-{html.escape(msg.get("id",""))}">'
             f'{render_avatar(user, "sm")}'
             f'<div class="reply-body">'
             f'<span class="reply-author">{html.escape(display_name(user))}</span>'
