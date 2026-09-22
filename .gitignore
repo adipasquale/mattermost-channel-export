@@ -5,3 +5,6 @@ __pycache__
 *.html
 *.tsv
 exports
+!examples/**/*.json
+!examples/**/*.svg
+!/index.html
