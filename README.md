@@ -10,7 +10,7 @@ There is also an archive browser webapp in `webapp-exports-browser/`.
 
 ![exports browser screenshot](docs/browser-screenshot-room.png)
 
-[access the hosted browser webapp](https://revolunet.github.io/mattermost-channel-export/webapp-exports-browser/)
+[access the hosted browser webapp](https://revolunet.github.io/mattermost-channel-export/)
 
 Tested against Mattermost **10.12.4**.
 
@@ -148,7 +148,7 @@ Previewing the channel in a iframe requires a Service Worker, which serves the p
 
 ### Demo
 
-- **Browser app**: https://revolunet.github.io/mattermost-channel-export/webapp-exports-browser/ — pick any exported channel folder on your machine to try it.
+- **Browser app**: https://revolunet.github.io/mattermost-channel-export/ — pick any exported channel folder on your machine to try it.
 - **Individual example channel pages** (rendered by `to_html.py`, published as-is):
   - https://revolunet.github.io/mattermost-channel-export/examples/general/index.html
   - https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html
