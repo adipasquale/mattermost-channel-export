@@ -2,7 +2,7 @@
 
 Three scripts to select, export a Mattermost channel history, and render it as a static HTML archive
 
-There is also an archive browser webapp in the standalone file `/index.html`.
+There is also an archive browser webapp in `webapp-exports-browser/`.
 
 Tested against Mattermost **10.12.4**.
 
@@ -128,19 +128,19 @@ uv run --env-file .env to_html.py
 
 ---
 
-## Browse multiple exported channels — `index.html`
+## Browse multiple exported channels — `webapp-exports-browser/`
 
-A static, dependency-free page at the repo root for browsing several exported channels at once.
+A static, dependency-free page (`index.html` + `sw.js`) for browsing several exported channels at once.
 
 **Requires a Chromium-based browser** for the folder picker — it uses the File System Access API, which Firefox and Safari don't support yet
 
 There is a search feature that accepts a Mattermost permalink (`https://…/pl/<id>`) or a raw message ID and redirects to the correct chanel and message when found.
 
-Previewing the channel in a iframe requires a Service Worker, which serves the picked folder's files directly so each channel's page loads completely unmodified. Service Workers need a secure context, so **serve `index.html` over `https://` or `http://localhost`**.
+Previewing the channel in a iframe requires a Service Worker, which serves the picked folder's files directly so each channel's page loads completely unmodified. Service Workers need a secure context, so **serve `webapp-exports-browser/index.html` over `https://` or `http://localhost`**.
 
 ### Demo
 
-- **Browser app**: https://revolunet.github.io/mattermost-channel-export/ — pick any exported channel folder on your machine  to try it.
+- **Browser app**: https://revolunet.github.io/mattermost-channel-export/webapp-exports-browser/ — pick any exported channel folder on your machine to try it.
 - **Individual example channel pages** (rendered by `to_html.py`, published as-is):
   - https://revolunet.github.io/mattermost-channel-export/examples/general/index.html
   - https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html
