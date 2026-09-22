@@ -670,10 +670,29 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
     });
   }
 
-  function focusMessage(iframe, id) {
+  // Exports rendered before to_html.py stamped an id on thread replies have
+  // none to look up. Falls back to position: to_html.py always renders a
+  // parent's replies in chronological order, so re-sorting the JSON thread
+  // the same way and indexing into the rendered `.reply` elements finds the
+  // right one even without an id.
+  function findReplyByPosition(doc, ch, parentId, replyId) {
+    const parentMsg = (ch.channelData.messages || []).find((m) => m.id === parentId);
+    const parentEl = doc.getElementById("msg-" + parentId);
+    if (!parentMsg || !parentEl) return null;
+    const replyEls = parentEl.querySelectorAll(".thread-replies .reply");
+    const thread = [...(parentMsg.thread || [])].sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+    const index = thread.findIndex((r) => r.id === replyId);
+    return index >= 0 && index < replyEls.length ? replyEls[index] : null;
+  }
+
+  function focusMessage(iframe, id, ch) {
     const doc = iframe.contentDocument;
     if (!doc) return;
-    const el = doc.getElementById("msg-" + id);
+    let el = doc.getElementById("msg-" + id);
+    if (!el && ch) {
+      const info = ch.messages.find((m) => m.id === id);
+      if (info && info.isReply) el = findReplyByPosition(doc, ch, info.parentId, id);
+    }
     if (!el) return;
     const repliesWrap = el.closest(".thread-replies");
     if (repliesWrap && repliesWrap.classList.contains("hidden")) {
@@ -718,7 +737,7 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
       const onLoad = () => {
         const doc = previewFrame.contentDocument;
         const ok = !!(doc && doc.querySelector(".channel-header"));
-        if (ok && focusId) focusMessage(previewFrame, focusId);
+        if (ok && focusId) focusMessage(previewFrame, focusId, ch);
         finish(ok);
       };
       const timer = setTimeout(() => finish(false), 2500);
