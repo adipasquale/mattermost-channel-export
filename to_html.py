@@ -23,7 +23,7 @@ try:
 
     class _Renderer(_mistune.HTMLRenderer):
         def link(self, text, url, title=None):
-            s = f'<a href="{self.safe_url(url)}" target="_blank" rel="noopener"'
+            s = f'<a href="{_mistune.helpers.escape_url(url)}" target="_blank" rel="noopener"'
             if title:
                 s += f' title="{html.escape(title)}"'
             return s + f">{text}</a>"
