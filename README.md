@@ -2,15 +2,12 @@
 
 Three scripts to select, export a Mattermost channel messages and images, and render it as an HTML archive.
 
-![capture d'écran exemple d'export HTML](docs/exemple-export-cantine.png)
-
-[browse this HTML export example](https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html)
-
 There is also an archive browser webapp in `webapp-exports-browser/`.
 
 ![exports browser screenshot](docs/browser-screenshot-room.png)
 
-[access the hosted browser webapp](https://revolunet.github.io/mattermost-channel-export/)
+- [Mattermost Archive Browser web app](https://revolunet.github.io/mattermost-channel-export/)
+- [standalone HTML export example](https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html)
 
 Tested against Mattermost **10.12.4**.
 
