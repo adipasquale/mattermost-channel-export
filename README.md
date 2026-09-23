@@ -2,11 +2,12 @@
 
 Three scripts to select, export a Mattermost channel messages and images, and render it as an HTML archive.
 
-There is also an archive browser webapp in `webapp-exports-browser/`.
+There is also `sommaire.html`, a single page to browse several exported channels at once.
 
 ![exports browser screenshot](docs/browser-screenshot-room.png)
 
-- [Mattermost Archive Browser web app](https://revolunet.github.io/mattermost-channel-export/)
+- [Project website](https://revolunet.github.io/mattermost-channel-export/): overview, `sommaire.html` and an example archive to download
+- [`sommaire.html` demo over the example channels](https://revolunet.github.io/mattermost-channel-export/examples/)
 - [standalone HTML export example](https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html)
 
 Tested against Mattermost **10.12.4**.
@@ -133,21 +134,38 @@ uv run --env-file .env to_html.py
 
 ---
 
-## Browse multiple exported channels — `webapp-exports-browser/`
+## Browse multiple exported channels — `sommaire.html`
 
-A static, dependency-free page (`index.html` + `sw.js`) for browsing several exported channels at once.
+A single static, dependency-free page for browsing several exported channels at once, meant for non-technical users: no script to run, no server, any browser.
 
-**Requires a Chromium-based browser** for the folder picker — it uses the File System Access API, which Firefox and Safari don't support yet
+1. Unzip each exported channel into the same folder, and put `sommaire.html` next to them.
+2. Double-click `sommaire.html`, click the button and pick that same folder.
 
-There is a search feature that accepts a Mattermost permalink (`https://…/pl/<id>`) or a raw message ID and redirects to the correct chanel and message when found.
+```
+my-archives/
+├── sommaire.html
+├── general/
+│   ├── general.json
+│   ├── index.html
+│   └── e5f6a7b8_photo-equipe.svg
+└── cantine/
+    └── …
+```
 
-Previewing the channel in a iframe requires a Service Worker, which serves the picked folder's files directly so each channel's page loads completely unmodified. Service Workers need a secure context, so **serve `webapp-exports-browser/index.html` over `https://` or `http://localhost`**.
+The page only reads the channels' JSON files, to list the channels and build a search index.
+Each channel is then shown through a plain relative link to its `index.html`, which is why the page must sit in the picked folder.
+Nothing is remembered between visits: the folder has to be picked again each time.
+
+There is a search feature that accepts a Mattermost permalink (`https://…/pl/<id>`) or a raw message ID and opens the right channel at that message (`<channel>/index.html#msg-<id>`, which also works on its own).
+Exports rendered before `to_html.py` handled that anchor still open, but only jump to top-level messages; re-run `to_html.py` on them to fix it.
+
+Everything runs from `file://`, where browsers isolate each file from the others: a channel page, or an image in it, can't reach the other files or this page.
 
 ### Demo
 
-- **Browser app**: https://revolunet.github.io/mattermost-channel-export/ — pick any exported channel folder on your machine to try it.
+- **Project website**: https://revolunet.github.io/mattermost-channel-export/ — built from `site/index.html`, offers `sommaire.html` and `archives-exemple.zip` (`sommaire.html` + the example channels) for download.
+- **Channels browser**: https://revolunet.github.io/mattermost-channel-export/examples/ — the example channels, listed from a `salons.js` generated at deploy time (used instead of the folder picker when present).
 - **Individual example channel pages** (rendered by `to_html.py`, published as-is):
   - https://revolunet.github.io/mattermost-channel-export/examples/general/index.html
   - https://revolunet.github.io/mattermost-channel-export/examples/cantine/index.html
   - https://revolunet.github.io/mattermost-channel-export/examples/veille-tech/index.html
-

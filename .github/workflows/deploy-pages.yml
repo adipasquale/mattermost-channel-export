@@ -29,11 +29,20 @@ jobs:
           for f in examples/*/*.json; do
             uv run to_html.py "$f" "$(dirname "$f")/index.html"
           done
-      - name: Assemble Pages site (browser webapp at the root, examples/ alongside it)
+      - name: Assemble Pages site
         run: |
           mkdir -p _site
-          cp webapp-exports-browser/index.html webapp-exports-browser/sw.js _site/
+          # Landing page, with the files it offers for download
+          cp site/index.html docs/browser-screenshot-room.png sommaire.html _site/
+          mkdir -p _zip/archives-exemple
+          cp sommaire.html _zip/archives-exemple/
+          cp -r examples/* _zip/archives-exemple/
+          (cd _zip && python3 -m zipfile -c ../_site/archives-exemple.zip archives-exemple)
+          # Online demo: sommaire.html over examples/, with a generated salons.js
+          # standing in for the folder picker, which can't point at a server's folder
           cp -r examples _site/examples
+          cp sommaire.html _site/examples/index.html
+          uv run python -c 'import json, pathlib; print("window.SALONS = " + json.dumps([{"dir": p.parent.name, "data": json.loads(p.read_text())} for p in sorted(pathlib.Path("examples").glob("*/*.json"))], ensure_ascii=False) + ";")' > _site/examples/salons.js
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
