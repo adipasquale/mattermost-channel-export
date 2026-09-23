@@ -157,9 +157,9 @@ Each channel is then shown through a plain relative link to its `index.html`, wh
 Nothing is remembered between visits: the folder has to be picked again each time.
 
 There is a search feature that accepts a Mattermost permalink (`https://…/pl/<id>`) or a raw message ID and opens the right channel at that message (`<channel>/index.html#msg-<id>`, which also works on its own).
-Exports rendered before `to_html.py` handled that anchor still open, but only jump to top-level messages; re-run `to_html.py` on them to fix it.
+Exports rendered before `to_html.py` handled that anchor work too: `sommaire.html` scrolls to the message, or to its thread's parent message, and says which one to look at (and which thread to expand).
 
-Everything runs from `file://`, where browsers isolate each file from the others: a channel page, or an image in it, can't reach the other files or this page.
+Security-wise, everything runs from `file://`, where browsers isolate each file from the others: a channel page, or an image in it, can't reach the other files or this page.
 
 ### Demo
 

@@ -297,6 +297,8 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
   .onboarding-grid { grid-template-columns: 1fr; }
 }
 
+#preview-note { margin-top: 0; }
+
 #preview-frame {
   flex: 1;
   width: 100%;
@@ -375,6 +377,7 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
       <h2 id="preview-title"></h2>
       <a id="preview-open-tab" class="btn secondary" target="_blank" rel="noopener">Ouvrir dans un nouvel onglet ↗</a>
     </div>
+    <div id="preview-note" class="warning hidden"></div>
     <div id="preview-empty" class="preview-empty hidden"></div>
     <iframe id="preview-frame" title="Aperçu du salon" class="hidden"></iframe>
   </main>
@@ -405,6 +408,7 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
   const previewTitle = $("preview-title");
   const previewOpenTab = $("preview-open-tab");
   const previewEmpty = $("preview-empty");
+  const previewNote = $("preview-note");
   const previewFrame = $("preview-frame");
   const searchModal = $("search-modal");
   const searchInput = $("search-input");
@@ -447,9 +451,9 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
       if (parts.length === 2 && parts[1] === ownName) pageInFolder = true;
       if (parts.length !== 3) continue;
       const [, dir, name] = parts;
-      if (!dirs.has(dir)) dirs.set(dir, { jsons: [], hasHtml: false });
+      if (!dirs.has(dir)) dirs.set(dir, { jsons: [], html: null });
       const entry = dirs.get(dir);
-      if (name === "index.html") entry.hasHtml = true;
+      if (name === "index.html") entry.html = f;
       else if (name.toLowerCase().endsWith(".json")) entry.jsons.push(f);
     }
 
@@ -459,7 +463,7 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
       if (!json) continue;
       try {
         const data = JSON.parse(await json.text());
-        if (isValidExportShape(data)) loaded.push({ dir, data, hasHtml: entry.hasHtml });
+        if (isValidExportShape(data)) loaded.push({ dir, data, hasHtml: !!entry.html, htmlFile: entry.html });
       } catch (e) {
         console.warn("JSON illisible :", json.webkitRelativePath, e);
       }
@@ -478,7 +482,7 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
     for (const ch of channels) {
       for (const m of ch.data.messages) {
         messagesById.set(m.id, { ch, msg: m, isReply: false });
-        for (const r of m.thread || []) messagesById.set(r.id, { ch, msg: r, isReply: true });
+        for (const r of m.thread || []) messagesById.set(r.id, { ch, msg: r, isReply: true, parent: m });
       }
     }
     renderChannels();
@@ -527,7 +531,32 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
     }
   }
 
-  function showChannel(ch, messageId) {
+  // Exports rendered before to_html.py handled #msg-<id> anchors lack the
+  // JS that opens a collapsed thread and centres the message, and have no
+  // id on thread replies. Spotted by that JS missing from their index.html
+  // (channels listed by salons.js are always recent).
+  async function isRecentExport(ch) {
+    if (!ch.htmlFile) return true;
+    if (ch.recent === undefined) ch.recent = (await ch.htmlFile.text()).includes("focusFromHash");
+    return ch.recent;
+  }
+
+  // In those, the browser's own jump puts the message at the very top,
+  // under the page's sticky search bar: aim two messages earlier instead.
+  function anchorAbove(ch, id) {
+    const i = ch.data.messages.findIndex((m) => m.id === id);
+    return i >= 2 ? ch.data.messages[i - 2].id : null;
+  }
+
+  // As to_html.py prints it: the export's own time zone, not the viewer's.
+  function describe(msg) {
+    const author = msg.user && msg.user.username;
+    return (author ? "de @" + author + " " : "") + "(" + formatDate(msg.created_at) + ", " + (msg.created_at || "").slice(11, 16) + ")";
+  }
+
+  function showChannel(ch, messageId, note) {
+    previewNote.textContent = note || "";
+    previewNote.classList.toggle("hidden", !note);
     for (const c of channels) c.item.classList.toggle("active", c === ch);
     previewTitle.textContent = channelTitle(ch);
     previewHeader.classList.remove("hidden");
@@ -570,7 +599,7 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
       return;
     }
 
-    const { ch, msg, isReply } = found;
+    const { ch, msg, isReply, parent } = found;
     const author = msg.user && msg.user.username;
     const text = msg.message || "";
     const head = el("div");
@@ -584,9 +613,17 @@ dialog#search-modal::backdrop { background: rgba(0, 0, 0, .6); }
 
     const go = el("button", "btn secondary", "Voir le message");
     go.disabled = !ch.hasHtml;
-    go.addEventListener("click", () => {
-      showChannel(ch, msg.id);
+    go.addEventListener("click", async () => {
       searchModal.close();
+      if (await isRecentExport(ch)) {
+        showChannel(ch, msg.id);
+        return;
+      }
+      const target = isReply ? parent : msg;
+      showChannel(ch, anchorAbove(ch, target.id),
+        "Ce salon a été exporté avec une ancienne version de l'outil : " + (isReply
+          ? "la réponse recherchée " + describe(msg) + " est dans le thread du message " + describe(parent) + ". Dépliez ce thread pour la voir."
+          : "le message recherché est celui " + describe(msg) + "."));
     });
     box.append(go);
   }
